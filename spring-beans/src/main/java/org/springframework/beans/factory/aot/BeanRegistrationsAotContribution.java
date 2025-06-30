@@ -65,7 +65,7 @@ class BeanRegistrationsAotContribution
 
 	@Override
 	public void applyTo(GenerationContext generationContext,
-						BeanFactoryInitializationCode beanFactoryInitializationCode) {
+			BeanFactoryInitializationCode beanFactoryInitializationCode) {
 
 		/*
 		 * Too many constants breach constant pool limit of Java class
@@ -75,15 +75,12 @@ class BeanRegistrationsAotContribution
 
 		int partitionSize = 5000;
 		int partitions = (registrations.size() + partitionSize - 1) / partitionSize;
-
 		for (int index = 0; index < partitions; index++) {
 			int start = index * partitionSize;
 			int end = Math.min(start + partitionSize, registrations.size());
 			List<Registration> slice = registrations.subList(start, end);
-
 			_applyTo(generationContext, beanFactoryInitializationCode, slice, index);
 		}
-
 	}
 
 	private void _applyTo(GenerationContext generationContext,
@@ -104,7 +101,6 @@ class BeanRegistrationsAotContribution
 				method -> generateRegisterAliasesMethodForSlice(method, registrationsSlice));
 		beanFactoryInitializationCode.addInitializer(generatedAliasesMethod.toMethodReference());
 		generateRegisterHints(generationContext.getRuntimeHints(), registrationsSlice);
-
 	}
 
 	private void generateRegisterAliasesMethodForSlice(MethodSpec.Builder method, List<Registration> registrationsSlice) {
