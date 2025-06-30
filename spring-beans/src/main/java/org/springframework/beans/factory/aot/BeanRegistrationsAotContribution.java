@@ -67,27 +67,48 @@ class BeanRegistrationsAotContribution
 	public void applyTo(GenerationContext generationContext,
 			BeanFactoryInitializationCode beanFactoryInitializationCode) {
 
-		GeneratedClass generatedClass = generationContext.getGeneratedClasses()
-				.addForFeature("BeanFactoryRegistrations", type -> {
-					type.addJavadoc("Register bean definitions for the bean factory.");
-					type.addModifiers(Modifier.PUBLIC);
-				});
-		BeanRegistrationsCodeGenerator codeGenerator = new BeanRegistrationsCodeGenerator(generatedClass);
-		GeneratedMethod generatedBeanDefinitionsMethod = new BeanDefinitionsRegistrationGenerator(
-				generationContext, codeGenerator, this.registrations).generateRegisterBeanDefinitionsMethod();
-		beanFactoryInitializationCode.addInitializer(generatedBeanDefinitionsMethod.toMethodReference());
-		GeneratedMethod generatedAliasesMethod = codeGenerator.getMethods().add("registerAliases",
-				this::generateRegisterAliasesMethod);
-		beanFactoryInitializationCode.addInitializer(generatedAliasesMethod.toMethodReference());
-		generateRegisterHints(generationContext.getRuntimeHints(), this.registrations);
+		/*
+		 * Too many constants breach constant pool limit of Java class
+		 * Partitioning @registrations to multiple slices handled by separate classes prevents reaching this limit
+		 * Resolves issue #35044
+		 */
+
+		int partitionSize = 5000;
+		int partitions = (registrations.size() + partitionSize - 1) / partitionSize;
+		for (int index = 0; index < partitions; index++) {
+			int start = index * partitionSize;
+			int end = Math.min(start + partitionSize, registrations.size());
+			List<Registration> slice = registrations.subList(start, end);
+			_applyTo(generationContext, beanFactoryInitializationCode, slice, index);
+		}
 	}
 
-	private void generateRegisterAliasesMethod(MethodSpec.Builder method) {
+	private void _applyTo(GenerationContext generationContext,
+				  BeanFactoryInitializationCode beanFactoryInitializationCode, List<Registration> registrationsSlice, int index) {
+
+		String feature = "BeanFactoryRegistrations" + (index+1) ;
+		GeneratedClass generatedClass = generationContext.getGeneratedClasses()
+				.addForFeature(feature, type -> {
+					type.addJavadoc("Register bean definitions (slice " + (index + 1) + ").");
+					type.addModifiers(Modifier.PUBLIC);
+				});
+
+		BeanRegistrationsCodeGenerator codeGenerator = new BeanRegistrationsCodeGenerator(generatedClass);
+		GeneratedMethod generatedBeanDefinitionsMethod = new BeanDefinitionsRegistrationGenerator(
+				generationContext, codeGenerator, registrationsSlice).generateRegisterBeanDefinitionsMethod();
+		beanFactoryInitializationCode.addInitializer(generatedBeanDefinitionsMethod.toMethodReference());
+		GeneratedMethod generatedAliasesMethod = codeGenerator.getMethods().add("registerAliases",
+				method -> generateRegisterAliasesMethodForSlice(method, registrationsSlice));
+		beanFactoryInitializationCode.addInitializer(generatedAliasesMethod.toMethodReference());
+		generateRegisterHints(generationContext.getRuntimeHints(), registrationsSlice);
+	}
+
+	private void generateRegisterAliasesMethodForSlice(MethodSpec.Builder method, List<Registration> registrationsSlice) {
 		method.addJavadoc("Register the aliases.");
 		method.addModifiers(Modifier.PUBLIC);
 		method.addParameter(DefaultListableBeanFactory.class, BEAN_FACTORY_PARAMETER_NAME);
 		CodeBlock.Builder code = CodeBlock.builder();
-		this.registrations.forEach(registration -> {
+		registrationsSlice.forEach(registration -> {
 			for (String alias : registration.aliases()) {
 				code.addStatement("$L.registerAlias($S, $S)", BEAN_FACTORY_PARAMETER_NAME,
 						registration.beanName(), alias);
